@@ -109,6 +109,16 @@
     layers <- object.layers[grepl("data", object.layers)]
   }
 
+  # Check if the Seurat object contains a "MALAT1" feature in the specified assay.
+  # If not, stop the function and return an error message.
+  if (
+    !"MALAT1" %in% rownames(SeuratObject::GetAssayData(SeuObj, assay = assay))
+  ) {
+    stop(
+      "The Seurat object does not contain a 'MALAT1' feature in the specified assay. Please ensure that the 'MALAT1' feature is present."
+    )
+  }
+
   # The results of the MALAT1 threshold computation will be stored in the Seurat object's metadata.
   MALAT1.metadata <- lapply(
     layers,
