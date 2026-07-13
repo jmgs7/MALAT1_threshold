@@ -1,12 +1,12 @@
-#' @title .ComputeMALAT1Threshold
-#' Define a MALAT1-based cell quality threshold using density and spline fits
+#' @title .ComputeFeatureThreshold
 #'
 #' @description
-#' Computes an automatic threshold on normalized MALAT1 expression to separate
-#' low-quality droplets or empty droplets from real cells, following the
-#' MALAT1_threshold approach developed by BaderLab.
-#' The function estimates the kernel density of MALAT1 counts, fits a smoothing
-#' spline, locates local maxima and minima, and then uses a quadratic
+#' Computes an automatic threshold on normalized expression a feature to filter
+#' cells based on this value. This function has been adapted from the BaderLab
+#' MALAT1_threshold R module (see references) and is intented to apply the MALAT1
+#' threshold approach developed by BaderLab (see reference).
+#' The function estimates the kernel density of a given feature, fits a
+#' smoothing spline, locates local maxima and minima, and then uses a quadratic
 #' approximation around the main cell peak to derive a robust cutoff.
 #'
 #' @details
@@ -27,45 +27,43 @@
 #' `rough.max`) and explicit error handling for atypical distributions (e.g.
 #' entire sample of low-quality droplets).
 #'
-#' @param counts.vector Numeric vector of normalized MALAT1 expression values
+#' NOTE: This parameters are set to default values that work well for MALAT1,
+#' but can be adjusted for other features.
+#'
+#' @param counts.vector Numeric vector of normalized feature expression values
 #'   for one sample; typically log-normalized counts per cell from an
-#'   unintegrated dataset containing multiple cell types.
+#'   unintegrated dataset containing multiple cell types. Note that the rest of
+#'   the parameters are tuned for MALAT1 and may need adjustment for other features.
 #' @param bw.bandwidth Numeric scalar passed to \code{stats::density()} as the
 #'   kernel bandwidth; default is \code{0.01}. Smaller values (e.g. \code{0.001})
 #'   make the density line less stiff and more closely track the histogram.
 #' @param chosen.min Numeric scalar giving the minimum MALAT1 value above which
 #'   a density peak is considered a candidate for the real cell peak; default
-#'   \code{2}. This helps ignore spurious peaks at or near zero due to empty
-#'   droplets or ambient RNA.
+#'   \code{2} - fine-tuned for MALAT1. This helps ignore spurious peaks at or
+#'   near zero due to empty droplets or ambient RNA.
 #' @param smooth.spar Numeric smoothing parameter (\code{spar}) passed to
 #'   \code{stats::smooth.spline()}, controlling the trade-off between smoothness
-#'   and fidelity to the density curve; default \code{1}.
+#'   and fidelity to the density curve; default \code{1} - fine-tuned for MALAT1.
 #' @param abs.min Numeric scalar specifying the absolute minimum allowed
 #'   MALAT1 threshold. Protects against thresholds collapsing to zero in
-#'   pathological cases; default \code{1}.
+#'   pathological cases; default \code{1} - fine-tned for MALAT1.
 #' @param rough.max Numeric scalar giving a rough expected position of the
 #'   MALAT1 peak when no local maximum can be found. The closest x-value in the
-#'   density to this value is used as a surrogate peak; default \code{6}.
-#' 
+#'   density to this value is used as a surrogate peak; default \code{6}
+#'   - fine-tuned for MALAT1.
+#' @param conservative.threshold Numeric scalar specifying a conservative default
+#'   threshold to return in case of errors (e.g. no high MALAT1 peaks). Default is \code{2}
+#'   - fine-tuned for MALAT1.
+#'
 #' @import stats
-#' @return
-#' If \code{return.plots = FALSE}, a single numeric scalar: the MALAT1
-#' threshold (left quadratic intercept, constrained to be at least
-#' \code{abs.min}).
-#' If \code{return.plots = TRUE}, a list with elements:
-#' \describe{
-#'   \item{threshold}{Numeric MALAT1 cutoff used to flag low-quality cells.}
-#'   \item{plots}{A \code{patchwork} object with four ggplot2 panels:
-#'     density with local maxima, density with local minima, density with
-#'     quadratic fit, and histogram with threshold.}
-#' }
-#' On error, a diagnostic histogram is produced and the function returns
-#' the numeric value \code{2} as a conservative default threshold.
+#' @return threshold Numeric scalar: the MALAT1 threshold (left quadratic intercept,
+#' constrained to be at least \code{abs.min}). On error, the function returns the
+#' numeric value \code{2} as a conservative default threshold.
 #'
 #' @noRd
 #' @keywords internal
-#' @references
 #'
+#' @references
 #' This function has been adapted from the BaderLab MALAT1_threshold R module.
 #'
 #' Clarke, Bader et al. "MALAT1 expression indicates cell quality in
@@ -78,13 +76,14 @@
 #' @examples
 #' \dontrun{
 #'   # Assume malat1_norm is a numeric vector of normalized MALAT1 counts
-#'   threshold.res <- .ComputeMALAT1Threshold(
+#'   threshold.res <- .ComputeFeatureThreshold(
 #'     counts.vector    = malat1_norm,
 #'     bw.bandwidth     = 0.01,
 #'     chosen.min       = 2,
 #'     smooth.spar      = 2,
 #'     abs.min          = 1,
 #'     rough.max        = 3,
+#'     conservative.threshold = 2
 #'   )
 #' }
 #'
@@ -94,13 +93,14 @@
 #'   \item EmptyDrops: ambient RNA-based empty droplet detection.
 #' }
 
-.ComputeMALAT1Threshold <- function(
+.ComputeFeatureThreshold <- function(
   counts.vector,
   bw.bandwidth = 0.01,
   chosen.min = 2,
   smooth.spar = 1,
   abs.min = 1,
-  rough.max = 6
+  rough.max = 6,
+  conservative.threshold = 2
 ) {
   # Wrap the entire computation in tryCatch to handle atypical input gracefully.
   tryCatch(
@@ -246,13 +246,15 @@
       # On error, emit a diagnostic message explaining common causes (e.g. input not normalized).
       warning(
         "An error occurred: Please make sure you have used a vector of normalized counts as input. ",
-        "This may also indicate that you have no high MALAT1 peaks, meaning this particular sample may be poor quality. ",
-        "A conservative default threshold of 2 will be returned. Error details: ",
+        "This may also indicate that you have no high feature peaks, meaning this particular sample may be poor quality (if feature =  'MALAT1'). ",
+        "A conservative default threshold of ",
+        conservative.threshold,
+        " will be returned. Error details: ",
         e$message
       )
 
-      # Return a conservative default threshold value (2) to avoid failing downstream code.
-      return(2)
+      # Return a conservative default threshold value (2 by default) to avoid failing downstream code.
+      return(conservative.threshold)
     }
   )
 }

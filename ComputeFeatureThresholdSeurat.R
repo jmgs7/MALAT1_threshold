@@ -1,14 +1,11 @@
-#' @title .CalculateMALAT1Seurat
-#' Computes an automatic threshold on normalized MALAT1 expression to separate low-quality
-#' droplets or empty droplets from real cells, following the MALAT1_threshold approach
-#' developed by BaderLab (see references).
+#' @title .ComputeFeatureThresholdSeurat
 #'
 #' @description
-#' Computes an automatic threshold on normalized MALAT1 expression to separate low-quality
-#' droplets or empty droplets from real cells, following the MALAT1_threshold approach
-#' developed by BaderLab (see references). This function is designed to work with Seurat
-#' objects and assumes that the input Seurat object has been normalized and contains a
-#' "MALAT1" feature in its data layers.
+#' Computes an automatic threshold on normalized feature expression to separate low-quality
+#' droplets or empty droplets from real cells. This function is intented to follow the
+#' MALAT1 threshold approach developed by BaderLab (see references). This function is
+#' designed to work with Seurat objects and assumes that the input Seurat object has been
+#' normalized and contains a the searched feature in its data layers.
 #'
 #' @details
 #' MALAT1 is a nuclear-retained lncRNA whose expression correlates strongly with
@@ -23,17 +20,20 @@
 #' The threshold deterined per layer and a boolean value indicating whether each cell passes
 #' the threshold are stored in the Seurat object's metadata.
 #'
-#' @param SeuObj A SeuratObject with normalized counts and a "MALAT1" feature in its data layers.
+#' @param SeuObj A SeuratObject with normalized counts and a the searched feature in its data layers.
 #' @param assay Character string specifying the assay in the SeuratObject to use for MALAT1 expression. Default is "RNA".
 #' @param layers Character vector specifying the layers in the SeuratObject to process.
 #'   Default is `NULL`, which processes all layers containing "data" in their names.
-#' @param ... Additional arguments passed to the underlying `ComputeMALAT1Threshold` function, such as:
+#' @param feature Character string specifying the feature to use for MALAT1 expression. Default is "MALAT1". This
+#'   allows to search for MALAT1 in case is encoded with other symbol and to use the function for other features.
+#' @param ... Additional arguments passed to the underlying `.ComputeFeatureThreshold` function, such as:
 #'  \itemize{
 #'    \item \code{bw.bandwidth}: Bandwidth for kernel density estimation (default: 0.01).
 #'    \item \code{chosen.min}: Chosen minimum which a peak should be considered the dataset peak (default: 2).
 #'    \item \code{smooth.spar}: Smoothing parameter for density estimation (default: 2).
 #'    \item \code{abs.min}: Absolute minimum threshold (default: 1).
 #'    \item \code{rough.max}: Rough expected position of the MALAT1 expression peak (default: 6).
+#'    \item \code{conservative.threshold}: Conservative threshold to apply when impossible to find local minimum (default: 2).
 #' }
 #'
 #' @import Seurat
@@ -49,22 +49,23 @@
 #'@noRd
 #'
 #' @references
-#'
 #' Clarke, Bader et al. "MALAT1 expression indicates cell quality in
 #' single-cell RNA sequencing data." bioRxiv (2024).
 #' \url{https://www.biorxiv.org/content/10.1101/2024.07.14.603469v2}
 #'
 #' @examples
 #' \dontrun{
-#'   threshold.res <- .CalculateMALAT1Seurat(
+#'   threshold.res <- .CalculateFeatureThresholdSeurat(
 #'     SeuratObject = seurat_obj,
 #'     Assay = "RNA",
 #'     Layers = c("data.pool1", "data.pool2"),
+#'     feature = "MALAT1",
 #'     bw.bandwidth = 0.01,
 #'     chosen.min = 2,
 #'     smooth.spar = 2,
 #'     abs.min = 1,
-#'     rough.max = 6
+#'     rough.max = 6,
+#'     conservative.threshold = 2
 #'   )
 #' }
 #'
@@ -74,10 +75,11 @@
 #'   \item EmptyDrops: ambient RNA-based empty droplet detection.
 #' }
 
-.CalculateMALAT1Seurat <- function(
+.CalculateFeatureThresholdSeurat <- function(
   SeuObj,
   assay = "RNA",
   layers = NULL,
+  feature = "MALAT1",
   ...
 ) {
   # Check if the specified assay exists in the Seurat object
@@ -111,64 +113,78 @@
 
   # Check if the Seurat object contains a "MALAT1" feature in the specified assay.
   # If not, stop the function and return an error message.
-  if (
-    !"MALAT1" %in% rownames(SeuratObject::GetAssayData(SeuObj, assay = assay))
-  ) {
-    stop(
-      "The Seurat object does not contain a 'MALAT1' feature in the specified assay. Please ensure that the 'MALAT1' feature is present."
-    )
-  }
+  tryCatch(
+    SeuratObject::FetchData(SeuObj, assay = assay, vars = feature),
+    error = function(e) {
+      stop(
+        "The Seurat object does not contain a '",
+        feature,
+        "' feature in the specified assay. Please ensure that the '",
+        feature,
+        "' feature is present."
+      )
+    }
+  )
 
-  # The results of the MALAT1 threshold computation will be stored in the Seurat object's metadata.
-  MALAT1.metadata <- lapply(
+  # The results of the feature threshold computation will be stored in the Seurat object's metadata.
+  feature.metadata <- lapply(
     layers,
     function(layer) {
       # Retrieve the log-normalized MALAT1 expression values for the current layer.
-      MALAT1.logcounts <- SeuratObject::FetchData(
+      # We use suppressWarnings to avoid the warnings that arise when fetching data f
+      # from specific layers.
+      feature.logcounts <- suppressWarnings(SeuratObject::FetchData(
         SeuObj,
         assay = assay,
-        vars = "MALAT1",
+        vars = feature,
         layer = layer
-      )
+      ))
 
-      # Compute the MALAT1 threshold using the ComputeMALAT1Threshold function, passing any additional arguments.
+      # Compute the MALAT1 threshold using the .ComputeFeatureThreshold function, passing any additional arguments.
       threshold.value <- round(
-        .ComputeMALAT1Threshold(MALAT1.logcounts$MALAT1, ...),
+        .ComputeFeatureThreshold(feature.logcounts[[feature]], ...),
         digits = 2
       )
 
       # We will store the results in a data frame with cell IDs, computed threshold,
       # and whether each cell passes the threshold.
-      # The cells id are the row names of the MALAT1.logcounts data frame to ensure
+      # The cells id are the row names of the feature.logcounts data frame to ensure
       # proper alignment with the Seurat object's metadata.
-      cell.id <- row.names(MALAT1.logcounts)
+      cell.id <- row.names(feature.logcounts)
       # Create a vector of the computed threshold value for each cell.
-      MALAT1.threshold <- rep(threshold.value, length(cell.id))
+      feature.threshold <- rep(threshold.value, length(cell.id))
       # Create a boolean vector indicating whether each cell's
       # MALAT1 expression exceeds the computed threshold.
-      MALAT1.pass <- MALAT1.logcounts$MALAT1 > MALAT1.threshold
+      feature.pass <- feature.logcounts[[feature]] > feature.threshold
       # Combine the cell IDs, threshold values, and pass/fail results into a data frame.
       results.df <- data.frame(
         cell.id = cell.id,
-        MALAT1.threshold = MALAT1.threshold,
-        MALAT1.pass = MALAT1.pass
+        feature.threshold = feature.threshold,
+        feature.pass = feature.pass
       )
+
+      # Rename the columns of the results data frame to include the feature name for clarity.
+      names(results.df)[2:3] <- c(
+        paste0(feature, ".threshold"),
+        paste0(feature, ".pass")
+      )
+
       return(results.df)
     }
   ) |> # Combine the results from all layers into a single data frame.
     data.table::rbindlist() |>
     as.data.frame()
 
-  # Set the row names of the MALAT1.metadata data frame to the cell IDs
+  # Set the row names of the feature.metadata data frame to the cell IDs
   # for proper alignment with the Seurat object's metadata.
-  row.names(MALAT1.metadata) <- MALAT1.metadata$cell.id
-  # Delete the cell.id column from MALAT1.metadata as it is now redundant with the row names.
-  MALAT1.metadata$cell.id <- NULL
+  row.names(feature.metadata) <- feature.metadata$cell.id
+  # Delete the cell.id column from feature.metadata as it is now redundant with the row names.
+  feature.metadata$cell.id <- NULL
 
   # Add the computed MALAT1 threshold and pass/fail results to the Seurat object's metadata.
   SeuObj <- Seurat::AddMetaData(
     object = SeuObj,
-    metadata = MALAT1.metadata
+    metadata = feature.metadata
   )
 
   return(SeuObj)
