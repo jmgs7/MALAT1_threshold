@@ -54,9 +54,6 @@
 #' single-cell RNA sequencing data." bioRxiv (2024).
 #' \url{https://www.biorxiv.org/content/10.1101/2024.07.14.603469v2}
 #'
-#' BaderLab MALAT1_threshold GitHub repository:
-#' \url{https://github.com/BaderLab/MALAT1_threshold}
-#'
 #' @examples
 #' \dontrun{
 #'   threshold.res <- .CalculateMALAT1Seurat(
