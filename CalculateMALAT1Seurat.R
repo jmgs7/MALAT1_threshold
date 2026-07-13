@@ -39,15 +39,15 @@
 #' @import Seurat
 #' @import SeuratObject
 #' @importFrom data.table rbindlist
-#' 
+#'
 #'
 #' @return:
 #' \describe{
-#'   \item{SeuratObject} {The input SeuratObject with the MALAT1 threshold applied.}
+#'   \item{SeuObj} {The input SeuratObject with the MALAT1 threshold applied.}
 #' }
 #'
 #'@noRd
-#' 
+#'
 #' @references
 #'
 #' Clarke, Bader et al. "MALAT1 expression indicates cell quality in
@@ -75,13 +75,13 @@
 #' }
 
 .CalculateMALAT1Seurat <- function(
-  SeuratObject,
+  SeuObj,
   assay = "RNA",
   layers = NULL,
   ...
 ) {
   # Check if the specified assay exists in the Seurat object
-  if (!assay %in% names(SeuratObject@assays)) {
+  if (!assay %in% names(SeuObj@assays)) {
     stop(paste("Assay", assay, "not found in the Seurat object."))
   }
 
