@@ -102,6 +102,35 @@
   rough.max = 6,
   conservative.threshold = 2
 ) {
+  # Input validation: ensure counts.vector is numeric and non-empty, and that all parameters are valid.
+  if (missing(counts.vector)) {
+    stop("Input counts.vector is required.")
+  }
+  if (!is.numeric(counts.vector)) {
+    stop("Input counts.vector must be a numeric vector.")
+  }
+  if (length(counts.vector) == 0) {
+    stop("Input counts.vector is empty.")
+  }
+  if (!is.numeric(bw.bandwidth) || bw.bandwidth <= 0) {
+    stop("bw.bandwidth must be a positive numeric value.")
+  }
+  if (!is.numeric(chosen.min) || chosen.min < 0) {
+    stop("chosen.min must be a non-negative numeric value.")
+  }
+  if (!is.numeric(smooth.spar) || smooth.spar <= 0) {
+    stop("smooth.spar must be a positive numeric value.")
+  }
+  if (!is.numeric(abs.min) || abs.min < 0) {
+    stop("abs.min must be a non-negative numeric value.")
+  }
+  if (!is.numeric(rough.max) || rough.max < 0) {
+    stop("rough.max must be a non-negative numeric value.")
+  }
+  if (!is.numeric(conservative.threshold) || conservative.threshold < 0) {
+    stop("conservative.threshold must be a non-negative numeric value.")
+  }
+
   # Wrap the entire computation in tryCatch to handle atypical input gracefully.
   tryCatch(
     expr = {
